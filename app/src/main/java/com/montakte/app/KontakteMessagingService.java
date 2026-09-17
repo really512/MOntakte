@@ -15,6 +15,8 @@ import androidx.core.app.NotificationManagerCompat;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.SetOptions;
+import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
@@ -29,17 +31,29 @@ public class KontakteMessagingService extends FirebaseMessagingService {
     public void onCreate() {
         super.onCreate();
         createChannels();
+        syncCurrentToken();
     }
 
     @Override
     public void onNewToken(@NonNull String token) {
         super.onNewToken(token);
-        if (FirebaseAuth.getInstance().getCurrentUser() == null) return;
-        String uid = FirebaseAuth.getInstance().getCurrentUser().getUid();
+        saveToken(token);
+    }
+
+    private void syncCurrentToken() {
+        FirebaseMessaging.getInstance().getToken().addOnSuccessListener(this::saveToken);
+    }
+
+    private void saveToken(String token) {
+        if (token == null || token.isEmpty()) return;
+        FirebaseAuth auth = FirebaseAuth.getInstance();
+        if (auth.getCurrentUser() == null) return;
+        String uid = auth.getCurrentUser().getUid();
         Map<String, Object> data = new HashMap<>();
         data.put("fcmToken", token);
         data.put("fcmUpdatedAt", FieldValue.serverTimestamp());
-        FirebaseFirestore.getInstance().collection("users").document(uid).set(data, com.google.firebase.firestore.SetOptions.merge());
+        FirebaseFirestore.getInstance().collection("users").document(uid)
+                .set(data, SetOptions.merge());
     }
 
     @Override
@@ -57,7 +71,7 @@ public class KontakteMessagingService extends FirebaseMessagingService {
             else if ("channel".equals(type)) title = "📢 Новое сообщение в канале";
             else title = "💬 Новое сообщение";
         }
-        if (body == null || body.isEmpty()) body = "Откройте Контакте";
+        if (body == null || body.isEmpty()) body = "Откройте ВОнтакте";
 
         Intent intent;
         if ("call".equals(type)) {
@@ -81,14 +95,16 @@ public class KontakteMessagingService extends FirebaseMessagingService {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        int channel = "call".equals(type) ? android.app.NotificationManager.IMPORTANCE_HIGH : android.app.NotificationManager.IMPORTANCE_DEFAULT;
+        int channelImportance = "call".equals(type)
+                ? NotificationManager.IMPORTANCE_HIGH
+                : NotificationManager.IMPORTANCE_DEFAULT;
         String channelId = "call".equals(type) ? CALL_CHANNEL : CHAT_CHANNEL;
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, channelId)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-                .setPriority(channel)
+                .setPriority(channelImportance)
                 .setAutoCancel(!"call".equals(type))
                 .setContentIntent(pendingIntent);
 
@@ -106,9 +122,11 @@ public class KontakteMessagingService extends FirebaseMessagingService {
     private void createChannels() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = getSystemService(NotificationManager.class);
-        NotificationChannel chat = new NotificationChannel(CHAT_CHANNEL, "Сообщения", NotificationManager.IMPORTANCE_DEFAULT);
+        NotificationChannel chat = new NotificationChannel(
+                CHAT_CHANNEL, "Сообщения", NotificationManager.IMPORTANCE_DEFAULT);
         chat.setDescription("Уведомления из чатов, групп и каналов");
-        NotificationChannel calls = new NotificationChannel(CALL_CHANNEL, "Звонки", NotificationManager.IMPORTANCE_HIGH);
+        NotificationChannel calls = new NotificationChannel(
+                CALL_CHANNEL, "Звонки", NotificationManager.IMPORTANCE_HIGH);
         calls.setDescription("Входящие аудио- и видеозвонки");
         manager.createNotificationChannel(chat);
         manager.createNotificationChannel(calls);
