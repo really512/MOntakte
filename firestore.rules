@@ -32,6 +32,12 @@ service cloud.firestore {
       }
     }
 
+    match /calls/{callId} {
+      allow read: if signedIn() && (resource.data.callerUid == request.auth.uid || resource.data.receiverUid == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.callerUid == request.auth.uid && request.resource.data.receiverUid != request.auth.uid;
+      allow update: if signedIn() && (resource.data.callerUid == request.auth.uid || resource.data.receiverUid == request.auth.uid);
+    }
+
     match /posts/{postId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.authorUid == request.auth.uid && request.resource.data.text is string;
