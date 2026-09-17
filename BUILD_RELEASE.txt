@@ -1,0 +1,3 @@
+Release APK build configuration is enabled in .github/workflows/build-apk.yml.
+
+The workflow builds app/build/outputs/apk/release/app-release.apk and uploads artifact VOntakte-release-apk.
