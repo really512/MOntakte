@@ -59,7 +59,7 @@ service cloud.firestore {
 
       match /messages/{messageId} {
         allow read: if signedIn()
-          && (resource.data.communityType == 'group' || request.auth.uid in get(/databases/$(database)/documents/communities/$(communityId)).data.members);
+          && request.auth.uid in get(/databases/$(database)/documents/communities/$(communityId)).data.members;
         allow create: if signedIn()
           && request.auth.uid in get(/databases/$(database)/documents/communities/$(communityId)).data.members
           && request.resource.data.senderUid == request.auth.uid
