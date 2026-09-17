@@ -20,6 +20,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+      - name: Show Android signing fingerprints
+        run: gradle :app:signingReport --no-daemon
       # Release build is signed with the standard debug key for direct tablet testing.
       - name: Build release APK
         run: gradle :app:assembleRelease --no-daemon
