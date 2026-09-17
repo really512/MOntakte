@@ -10,6 +10,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -23,284 +24,64 @@ import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.auth.PhoneAuthCredential;
 import com.google.firebase.auth.PhoneAuthOptions;
 import com.google.firebase.auth.PhoneAuthProvider;
-import com.google.android.gms.tasks.OnCompleteListener;
-import com.google.android.gms.tasks.Task;
+import com.google.firebase.firestore.DocumentSnapshot;
+import com.google.firebase.firestore.FieldValue;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.Query;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
     private LinearLayout root;
     private EditText phoneInput;
     private FirebaseAuth auth;
+    private FirebaseFirestore db;
     private String verificationId;
     private PhoneAuthProvider.ForceResendingToken resendToken;
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
+    @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         try {
-            auth = FirebaseAuth.getInstance();
-            FirebaseUser currentUser = auth.getCurrentUser();
-            if (currentUser != null) showHomeScreen(currentUser);
-            else showPhoneScreen();
-        } catch (IllegalStateException e) {
-            showFirebaseSetupScreen();
-        }
+            auth = FirebaseAuth.getInstance(); db = FirebaseFirestore.getInstance();
+            FirebaseUser user = auth.getCurrentUser();
+            if (user != null) { ensureUser(user); showHomeScreen(user); } else showPhoneScreen();
+        } catch (IllegalStateException e) { showFirebaseSetupScreen(); }
     }
+    private TextView text(String s,float z){TextView v=new TextView(this);v.setText(s);v.setTextSize(z);v.setTextColor(Color.BLACK);v.setGravity(Gravity.CENTER);v.setPadding(8,12,8,12);return v;}
+    private Button button(String s){Button b=new Button(this);b.setText(s);b.setTextSize(16);return b;}
+    private void setupRoot(){root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setGravity(Gravity.CENTER);root.setPadding(32,32,32,32);setContentView(root);}
+    private void addTitle(String s,float z){TextView t=text(s,z);t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);root.addView(t);}
+    private void addBack(final Runnable r){Button b=button("← Назад");root.addView(b);b.setOnClickListener(v->r.run());}
+    private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
 
-    private TextView text(String value, float size) {
-        TextView view = new TextView(this);
-        view.setText(value);
-        view.setTextSize(size);
-        view.setTextColor(Color.BLACK);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(8, 12, 8, 12);
-        return view;
-    }
+    private void showPhoneScreen(){setupRoot();addTitle("Контакте",34);root.addView(text("Вход или регистрация",20));phoneInput=new EditText(this);phoneInput.setHint("Номер телефона, например +7...");phoneInput.setInputType(InputType.TYPE_CLASS_PHONE);phoneInput.setSingleLine(true);root.addView(phoneInput);Button b=button("Получить код");root.addView(b);b.setOnClickListener(v->{String p=phoneInput.getText().toString().trim();if(p.length()<7)phoneInput.setError("Введите номер");else sendCode(p);});}
+    private void sendCode(String phone){toast("Отправляем код...");PhoneAuthOptions o=PhoneAuthOptions.newBuilder(auth).setPhoneNumber(phone).setTimeout(60L,TimeUnit.SECONDS).setActivity(this).setCallbacks(new PhoneAuthProvider.OnVerificationStateChangedCallbacks(){@Override public void onVerificationCompleted(@NonNull PhoneAuthCredential c){signIn(c);}@Override public void onVerificationFailed(@NonNull FirebaseException e){toast("Не удалось отправить код: "+e.getMessage());}@Override public void onCodeSent(@NonNull String id,@NonNull PhoneAuthProvider.ForceResendingToken t){verificationId=id;resendToken=t;showCodeScreen(phone);}}).build();PhoneAuthProvider.verifyPhoneNumber(o);}
+    private void showCodeScreen(String phone){setupRoot();addTitle("Подтверждение",30);root.addView(text("Код отправлен на\n"+phone,17));EditText c=new EditText(this);c.setHint("Код из SMS");c.setInputType(InputType.TYPE_CLASS_NUMBER);c.setSingleLine(true);root.addView(c);Button v=button("Подтвердить"),r=button("Отправить код ещё раз");root.addView(v);root.addView(r);v.setOnClickListener(x->{if(c.getText().length()<4)c.setError("Введите код");else if(verificationId==null)c.setError("Запросите код ещё раз");else signIn(PhoneAuthProvider.getCredential(verificationId,c.getText().toString().trim()));});r.setOnClickListener(x->sendCode(phone));}
+    private void signIn(PhoneAuthCredential c){auth.signInWithCredential(c).addOnCompleteListener(this,t->{if(t.isSuccessful()){FirebaseUser u=t.getResult().getUser();if(u!=null){ensureUser(u);showHomeScreen(u);}}else if(t.getException() instanceof FirebaseAuthInvalidCredentialsException)toast("Неверный код");else toast("Ошибка входа: "+t.getException());});}
+    private void ensureUser(FirebaseUser u){if(u.getPhoneNumber()==null)return;Map<String,Object> m=new HashMap<>();m.put("uid",u.getUid());m.put("phone",u.getPhoneNumber());m.put("updatedAt",FieldValue.serverTimestamp());db.collection("users").document(u.getUid()).set(m,com.google.firebase.firestore.SetOptions.merge());}
 
-    private Button button(String value) {
-        Button button = new Button(this);
-        button.setText(value);
-        button.setTextSize(16);
-        return button;
-    }
+    private void showHomeScreen(FirebaseUser u){setupRoot();root.setGravity(Gravity.TOP|Gravity.CENTER_HORIZONTAL);addTitle("Контакте",32);root.addView(text(u.getPhoneNumber()==null?"Аккаунт":u.getPhoneNumber(),15));Button f=button("👥 Друзья"),q=button("📨 Заявки в друзья"),m=button("💬 Сообщения"),p=button("👤 Профиль");root.addView(f);root.addView(q);root.addView(m);root.addView(p);root.addView(text("Лента\n\nПосты подключим следующим этапом.",20));f.setOnClickListener(v->showFriendsScreen(u));q.setOnClickListener(v->showRequestsScreen(u));m.setOnClickListener(v->showMessagesScreen(u));p.setOnClickListener(v->showProfileScreen(u));}
 
-    private void setupRoot() {
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setGravity(Gravity.CENTER);
-        root.setPadding(32, 32, 32, 32);
-        setContentView(root);
-    }
+    private void showFriendsScreen(FirebaseUser u){setupRoot();addTitle("Друзья",30);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);root.addView(list);addBack(()->showHomeScreen(u));loadFriends(u,list);Button add=button("＋ Добавить друга");root.addView(add);add.setOnClickListener(v->showFindUserScreen(u));}
+    private void loadFriends(FirebaseUser u,LinearLayout list){db.collection("friendships").whereEqualTo("userA",u.getUid()).get().addOnSuccessListener(s->renderFriends(s.getDocuments(),u,list));db.collection("friendships").whereEqualTo("userB",u.getUid()).get().addOnSuccessListener(s->renderFriends(s.getDocuments(),u,list));}
+    private void renderFriends(List<DocumentSnapshot> docs,FirebaseUser u,LinearLayout list){for(DocumentSnapshot d:docs){String a=d.getString("userA"),b=d.getString("userB");String other=u.getUid().equals(a)?b:a;if(other!=null)db.collection("users").document(other).get().addOnSuccessListener(x->{String ph=x.getString("phone");if(ph!=null)list.addView(text("👤 "+ph,18));});}}
 
-    private void showPhoneScreen() {
-        setupRoot();
-        TextView title = text("Контакте", 34);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        root.addView(title);
-        root.addView(text("Вход или регистрация", 20));
-        phoneInput = new EditText(this);
-        phoneInput.setHint("Номер телефона, например +7...");
-        phoneInput.setInputType(InputType.TYPE_CLASS_PHONE);
-        phoneInput.setSingleLine(true);
-        root.addView(phoneInput, new LinearLayout.LayoutParams(-1, -2));
-        Button continueButton = button("Получить код");
-        root.addView(continueButton);
-        continueButton.setOnClickListener(v -> {
-            String phone = phoneInput.getText().toString().trim();
-            if (phone.length() < 7) phoneInput.setError("Введите номер телефона");
-            else sendCode(phone);
-        });
-    }
+    private void showRequestsScreen(FirebaseUser u){setupRoot();addTitle("Заявки в друзья",30);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);root.addView(list);db.collection("friendRequests").whereEqualTo("receiverUid",u.getUid()).whereEqualTo("status","pending").get().addOnSuccessListener(s->{if(s.isEmpty())list.addView(text("Новых заявок нет",18));for(DocumentSnapshot d:s.getDocuments())renderRequest(d,u,list);});addBack(()->showHomeScreen(u));}
+    private void renderRequest(DocumentSnapshot d,FirebaseUser u,LinearLayout list){String sender=d.getString("senderUid");if(sender==null)return;db.collection("users").document(sender).get().addOnSuccessListener(x->{String ph=x.getString("phone");LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.VERTICAL);row.addView(text("Заявка от "+(ph==null?sender:ph),18));Button a=button("Принять"),r=button("Отклонить");row.addView(a);row.addView(r);list.addView(row);a.setOnClickListener(v->acceptRequest(d.getId(),sender,u));r.setOnClickListener(v->db.collection("friendRequests").document(d.getId()).update("status","rejected").addOnSuccessListener(z->showRequestsScreen(u)));});}
+    private void acceptRequest(String id,String sender,FirebaseUser u){db.collection("friendRequests").document(id).update("status","accepted").addOnSuccessListener(v->{String key=friendshipId(sender,u.getUid());Map<String,Object> m=new HashMap<>();List<String> ids=new ArrayList<>(Arrays.asList(sender,u.getUid()));Collections.sort(ids);m.put("userA",ids.get(0));m.put("userB",ids.get(1));m.put("createdAt",FieldValue.serverTimestamp());db.collection("friendships").document(key).set(m).addOnSuccessListener(x->{toast("Заявка принята");showRequestsScreen(u);});});}
+    private void showFindUserScreen(FirebaseUser u){setupRoot();addTitle("Добавить в друзья",30);EditText s=new EditText(this);s.setHint("Номер телефона пользователя");s.setInputType(InputType.TYPE_CLASS_PHONE);s.setSingleLine(true);root.addView(s);Button b=button("Отправить заявку");root.addView(b);addBack(()->showFriendsScreen(u));b.setOnClickListener(v->{String ph=s.getText().toString().trim();if(ph.length()<7){s.setError("Введите номер");return;}db.collection("users").whereEqualTo("phone",ph).limit(1).get().addOnSuccessListener(x->{if(x.isEmpty()){toast("Пользователь не найден");return;}String other=x.getDocuments().get(0).getId();if(other.equals(u.getUid())){toast("Нельзя добавить самого себя");return;}String id=u.getUid()+"_"+other;Map<String,Object> m=new HashMap<>();m.put("senderUid",u.getUid());m.put("receiverUid",other);m.put("status","pending");m.put("createdAt",FieldValue.serverTimestamp());db.collection("friendRequests").document(id).set(m).addOnSuccessListener(z->toast("Заявка отправлена"));});});}
 
-    private void sendCode(String phone) {
-        Toast.makeText(this, "Отправляем код...", Toast.LENGTH_SHORT).show();
-        PhoneAuthOptions options = PhoneAuthOptions.newBuilder(auth)
-                .setPhoneNumber(phone)
-                .setTimeout(60L, TimeUnit.SECONDS)
-                .setActivity(this)
-                .setCallbacks(new PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-                    @Override public void onVerificationCompleted(@NonNull PhoneAuthCredential credential) { signInWithPhoneAuthCredential(credential); }
-                    @Override public void onVerificationFailed(@NonNull FirebaseException e) {
-                        Toast.makeText(MainActivity.this, "Не удалось отправить код: " + e.getMessage(), Toast.LENGTH_LONG).show();
-                    }
-                    @Override public void onCodeSent(@NonNull String id, @NonNull PhoneAuthProvider.ForceResendingToken token) {
-                        verificationId = id;
-                        resendToken = token;
-                        showCodeScreen(phone);
-                    }
-                }).build();
-        PhoneAuthProvider.verifyPhoneNumber(options);
-    }
+    private void showMessagesScreen(FirebaseUser u){setupRoot();addTitle("Сообщения",30);Button n=button("＋ Новый чат");root.addView(n);n.setOnClickListener(v->showNewMessageScreen(u));LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);root.addView(list);addBack(()->showHomeScreen(u));db.collection("conversations").whereArrayContains("participants",u.getUid()).get().addOnSuccessListener(s->{if(s.isEmpty())list.addView(text("Диалогов пока нет",18));for(DocumentSnapshot d:s.getDocuments()){List<String> p=(List<String>)d.get("participants");if(p==null)continue;for(String id:p)if(!id.equals(u.getUid())){String other=id;db.collection("users").document(other).get().addOnSuccessListener(x->{Button b=button("💬 "+(x.getString("phone")==null?other:x.getString("phone")));list.addView(b);b.setOnClickListener(v->showChatScreen(u,other));});break;}}});}
+    private void showNewMessageScreen(FirebaseUser u){setupRoot();addTitle("Новый чат",30);EditText r=new EditText(this);r.setHint("Телефон получателя");r.setInputType(InputType.TYPE_CLASS_PHONE);r.setSingleLine(true);root.addView(r);Button b=button("Открыть чат");root.addView(b);addBack(()->showMessagesScreen(u));b.setOnClickListener(v->db.collection("users").whereEqualTo("phone",r.getText().toString().trim()).limit(1).get().addOnSuccessListener(s->{if(s.isEmpty())toast("Пользователь не найден");else{String other=s.getDocuments().get(0).getId();if(!other.equals(u.getUid()))showChatScreen(u,other);}}));}
+    private String friendshipId(String a,String b){List<String> x=new ArrayList<>(Arrays.asList(a,b));Collections.sort(x);return x.get(0)+"_"+x.get(1);}
+    private void showChatScreen(FirebaseUser u,String other){setupRoot();addTitle("Чат",30);LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);ScrollView scroll=new ScrollView(this);scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));LinearLayout composer=new LinearLayout(this);EditText input=new EditText(this);input.setHint("Сообщение");Button send=button("Отправить");composer.addView(input,new LinearLayout.LayoutParams(0,-2,1));composer.addView(send);root.addView(composer);addBack(()->showMessagesScreen(u));String cid=friendshipId(u.getUid(),other);Map<String,Object> c=new HashMap<>();c.put("participants",Arrays.asList(u.getUid(),other));db.collection("conversations").document(cid).set(c,com.google.firebase.firestore.SetOptions.merge());Query q=db.collection("conversations").document(cid).collection("messages").orderBy("createdAt",Query.Direction.ASCENDING);q.addSnapshotListener((snap,e)->{if(e!=null||snap==null)return;list.removeAllViews();for(DocumentSnapshot d:snap.getDocuments()){String body=d.getString("text"),sender=d.getString("senderUid");list.addView(text((u.getUid().equals(sender)?"Вы: ":"Собеседник: ")+(body==null?"":body),17));}scroll.post(()->scroll.fullScroll(View.FOCUS_DOWN));});send.setOnClickListener(v->{String body=input.getText().toString().trim();if(body.isEmpty())return;Map<String,Object> m=new HashMap<>();m.put("senderUid",u.getUid());m.put("text",body);m.put("createdAt",FieldValue.serverTimestamp());db.collection("conversations").document(cid).collection("messages").add(m).addOnSuccessListener(x->input.setText(""));});}
 
-    private void showCodeScreen(String phone) {
-        setupRoot();
-        TextView title = text("Подтверждение", 30);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        root.addView(title);
-        root.addView(text("Код подтверждения отправлен на\n" + phone, 17));
-        EditText codeInput = new EditText(this);
-        codeInput.setHint("Введите код из SMS");
-        codeInput.setInputType(InputType.TYPE_CLASS_NUMBER);
-        codeInput.setSingleLine(true);
-        codeInput.setGravity(Gravity.CENTER);
-        root.addView(codeInput, new LinearLayout.LayoutParams(-1, -2));
-        Button verifyButton = button("Подтвердить");
-        root.addView(verifyButton);
-        Button resendButton = button("Отправить код ещё раз");
-        root.addView(resendButton);
-        verifyButton.setOnClickListener(v -> {
-            String code = codeInput.getText().toString().trim();
-            if (code.length() < 4) { codeInput.setError("Введите код из SMS"); return; }
-            if (verificationId == null) { codeInput.setError("Сначала запросите код ещё раз"); return; }
-            signInWithPhoneAuthCredential(PhoneAuthProvider.getCredential(verificationId, code));
-        });
-        resendButton.setOnClickListener(v -> sendCode(phone));
-    }
-
-    private void signInWithPhoneAuthCredential(PhoneAuthCredential credential) {
-        auth.signInWithCredential(credential).addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
-            @Override public void onComplete(@NonNull Task<AuthResult> task) {
-                if (task.isSuccessful()) {
-                    FirebaseUser user = task.getResult().getUser();
-                    if (user != null) showHomeScreen(user);
-                } else if (task.getException() instanceof FirebaseAuthInvalidCredentialsException) {
-                    Toast.makeText(MainActivity.this, "Неверный код подтверждения", Toast.LENGTH_LONG).show();
-                } else {
-                    Toast.makeText(MainActivity.this, "Ошибка входа: " + task.getException(), Toast.LENGTH_LONG).show();
-                }
-            }
-        });
-    }
-
-    private void showHomeScreen(FirebaseUser user) {
-        setupRoot();
-        root.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        TextView header = text("Контакте", 32);
-        header.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        root.addView(header, new LinearLayout.LayoutParams(-1, -2));
-        root.addView(text(user.getPhoneNumber() == null ? "Аккаунт" : user.getPhoneNumber(), 15));
-
-        Button profile = button("👤 Профиль");
-        Button friends = button("👥 Друзья");
-        Button requests = button("📨 Заявки в друзья");
-        Button messages = button("💬 Сообщения");
-        Button createPost = button("＋ Создать пост");
-        root.addView(profile);
-        root.addView(friends);
-        root.addView(requests);
-        root.addView(messages);
-        root.addView(createPost);
-
-        View divider = new View(this);
-        divider.setBackgroundColor(Color.LTGRAY);
-        LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(-1, 2);
-        dp.setMargins(0, 18, 0, 18);
-        root.addView(divider, dp);
-
-        TextView feed = text("Лента\n\nПока здесь ничего нет", 22);
-        root.addView(feed);
-
-        profile.setOnClickListener(v -> showProfileScreen(user));
-        friends.setOnClickListener(v -> showFriendsScreen(user));
-        requests.setOnClickListener(v -> showRequestsScreen(user));
-        messages.setOnClickListener(v -> showMessagesScreen(user));
-        createPost.setOnClickListener(v -> showCreatePostScreen());
-    }
-
-    private void showFriendsScreen(FirebaseUser user) {
-        setupRoot();
-        addTitle("Друзья", 30);
-        root.addView(text("Здесь будут ваши друзья.", 18));
-        root.addView(text("Пока список пуст — добавление друзей подключим к серверной базе.", 16));
-        addBackButton(() -> showHomeScreen(user));
-    }
-
-    private void showRequestsScreen(FirebaseUser user) {
-        setupRoot();
-        addTitle("Заявки в друзья", 30);
-        root.addView(text("Входящие заявки", 20));
-        root.addView(text("Пока нет новых заявок.", 17));
-        Button demo = button("＋ Найти пользователя и отправить заявку");
-        root.addView(demo);
-        demo.setOnClickListener(v -> showFindUserScreen(user));
-        addBackButton(() -> showHomeScreen(user));
-    }
-
-    private void showFindUserScreen(FirebaseUser user) {
-        setupRoot();
-        addTitle("Добавить в друзья", 30);
-        EditText search = new EditText(this);
-        search.setHint("Номер телефона пользователя");
-        search.setInputType(InputType.TYPE_CLASS_PHONE);
-        search.setSingleLine(true);
-        root.addView(search);
-        Button send = button("Отправить заявку");
-        root.addView(send);
-        send.setOnClickListener(v -> {
-            if (search.getText().toString().trim().length() < 7) search.setError("Введите номер");
-            else Toast.makeText(this, "Заявка будет отправлена после подключения базы пользователей.", Toast.LENGTH_LONG).show();
-        });
-        addBackButton(() -> showRequestsScreen(user));
-    }
-
-    private void showMessagesScreen(FirebaseUser user) {
-        setupRoot();
-        addTitle("Сообщения", 30);
-        root.addView(text("💬 Ваши сообщения", 21));
-        root.addView(text("Диалогов пока нет.", 17));
-        Button newMessage = button("＋ Новое сообщение");
-        root.addView(newMessage);
-        newMessage.setOnClickListener(v -> showNewMessageScreen(user));
-        addBackButton(() -> showHomeScreen(user));
-    }
-
-    private void showNewMessageScreen(FirebaseUser user) {
-        setupRoot();
-        addTitle("Новое сообщение", 30);
-        EditText recipient = new EditText(this);
-        recipient.setHint("Телефон получателя");
-        recipient.setInputType(InputType.TYPE_CLASS_PHONE);
-        recipient.setSingleLine(true);
-        root.addView(recipient);
-        EditText message = new EditText(this);
-        message.setHint("Сообщение");
-        message.setMinLines(4);
-        message.setGravity(Gravity.TOP);
-        root.addView(message);
-        Button send = button("Отправить");
-        root.addView(send);
-        send.setOnClickListener(v -> {
-            if (recipient.getText().toString().trim().length() < 7) recipient.setError("Введите номер");
-            else if (message.getText().toString().trim().isEmpty()) message.setError("Введите сообщение");
-            else Toast.makeText(this, "Сообщения будут отправляться через серверную базу на следующем этапе.", Toast.LENGTH_LONG).show();
-        });
-        addBackButton(() -> showMessagesScreen(user));
-    }
-
-    private void showProfileScreen(FirebaseUser user) {
-        setupRoot();
-        addTitle("Профиль", 30);
-        root.addView(text("Телефон", 16));
-        root.addView(text(user.getPhoneNumber() == null ? "Не указан" : user.getPhoneNumber(), 18));
-        addBackButton(() -> showHomeScreen(user));
-    }
-
-    private void showCreatePostScreen() {
-        setupRoot();
-        addTitle("Создать пост", 30);
-        EditText postInput = new EditText(this);
-        postInput.setHint("Что нового?");
-        postInput.setGravity(Gravity.TOP);
-        postInput.setMinLines(5);
-        postInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        root.addView(postInput, new LinearLayout.LayoutParams(-1, -2));
-        Button publish = button("Опубликовать");
-        root.addView(publish);
-        publish.setOnClickListener(v -> {
-            if (postInput.getText().toString().trim().isEmpty()) postInput.setError("Напишите текст поста");
-            else Toast.makeText(this, "Пост подготовлен. Серверная лента будет подключена следующим этапом.", Toast.LENGTH_LONG).show();
-        });
-        Button back = button("← Назад");
-        root.addView(back);
-        back.setOnClickListener(v -> { FirebaseUser user = auth.getCurrentUser(); if (user != null) showHomeScreen(user); });
-    }
-
-    private void addTitle(String value, float size) {
-        TextView title = text(value, size);
-        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        root.addView(title);
-    }
-
-    private void addBackButton(final Runnable action) {
-        Button back = button("← Назад");
-        root.addView(back);
-        back.setOnClickListener(v -> action.run());
-    }
-
-    private void showFirebaseSetupScreen() {
-        setupRoot();
-        addTitle("Контакте", 34);
-        root.addView(text("SMS-авторизация почти готова.\nНужно подключить Firebase-проект и файл google-services.json.", 18));
-    }
+    private void showProfileScreen(FirebaseUser u){setupRoot();addTitle("Профиль",30);root.addView(text("Телефон",16));root.addView(text(u.getPhoneNumber()==null?"Не указан":u.getPhoneNumber(),18));addBack(()->showHomeScreen(u));}
+    private void showFirebaseSetupScreen(){setupRoot();addTitle("Контакте",34);root.addView(text("Нужно подключить Firebase-проект и google-services.json.",18));}
 }
