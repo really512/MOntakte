@@ -8,7 +8,7 @@
     <application
         android:allowBackup="true"
         android:icon="@drawable/kontakte_icon"
-        android:label="Контакте"
+        android:label="ВОнтакте"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
         <activity
