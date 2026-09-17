@@ -35,7 +35,7 @@ service cloud.firestore {
     match /posts/{postId} {
       allow read: if signedIn();
       allow create: if signedIn() && request.resource.data.authorUid == request.auth.uid && request.resource.data.text is string;
-      allow update: if signedIn() && resource.data.authorUid == request.auth.uid || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount']));
+      allow update: if signedIn() && (resource.data.authorUid == request.auth.uid || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount']));
       allow delete: if signedIn() && resource.data.authorUid == request.auth.uid;
       match /likes/{uid} {
         allow read: if signedIn();
