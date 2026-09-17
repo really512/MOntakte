@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "556916736460",
+    "project_id": "bontakte",
+    "storage_bucket": "bontakte.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:556916736460:android:93f297f75f67dc60e09d69",
+        "android_client_info": {
+          "package_name": "com.montakte.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZQV30orTWuSMY_q2i7RuvzCxG8FWIfpY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
