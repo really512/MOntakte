@@ -15,6 +15,7 @@
         <activity android:name=".CallActivity" android:exported="false" />
         <activity android:name=".GroupChannelActivity" android:exported="false" />
         <activity android:name=".CommunitiesActivity" android:exported="false" />
+        <activity android:name=".CommunityChatActivity" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
