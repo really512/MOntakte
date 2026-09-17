@@ -1,10 +1,13 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { setGlobalOptions } = require('firebase-functions/v2');
+const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 
 admin.initializeApp();
 setGlobalOptions({ region: 'europe-west1' });
+
+const OPENAI_API_KEY = defineSecret('OPENAI_API_KEY');
 
 async function sendToUser(uid, message) {
   const snap = await admin.firestore().collection('users').doc(uid).get();
@@ -31,35 +34,83 @@ async function suspendUser(uid, days, reason) {
   }
 }
 
-// Content creators must pass moderation metadata from the trusted publishing flow.
-// If adultContent is true, the content is removed and the account is suspended.
-exports.moderateAdultPost = onDocumentCreated('posts/{postId}', async event => {
-  const data = event.data?.data();
-  if (!data?.adultContent || !data?.authorUid) return;
+function buildModerationInput(data) {
+  const input = [];
+  const text = typeof data?.text === 'string' ? data.text.trim() : '';
+  if (text) input.push({ type: 'text', text });
 
-  await event.data.ref.delete();
-  await suspendUser(data.authorUid, 3, 'adult_content_post');
-});
-
-exports.moderateAdultCommunityMessage = onDocumentCreated('communities/{communityId}/messages/{messageId}', async event => {
-  const data = event.data?.data();
-  if (!data?.adultContent || !data?.senderUid) return;
-
-  const communityRef = admin.firestore().collection('communities').doc(event.params.communityId);
-  const communitySnap = await communityRef.get();
-  const community = communitySnap.data() || {};
-
-  await event.data.ref.delete();
-
-  if (community.type === 'channel') {
-    // A channel containing prohibited adult content is permanently removed.
-    await communityRef.delete();
-    await suspendUser(data.senderUid, 5, 'adult_content_channel');
-  } else {
-    // Group messages with prohibited adult content are permanently removed.
-    await suspendUser(data.senderUid, 3, 'adult_content_group_message');
+  const mediaUrl = typeof data?.mediaUrl === 'string' ? data.mediaUrl.trim() : '';
+  if (mediaUrl && /^https?:\/\//i.test(mediaUrl)) {
+    input.push({ type: 'image_url', image_url: { url: mediaUrl } });
   }
-});
+  return input;
+}
+
+async function containsAdultContent(data, apiKey) {
+  if (data?.adultContent === true) return true;
+
+  const input = buildModerationInput(data);
+  if (!input.length || !apiKey) return false;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/moderations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ model: 'omni-moderation-latest', input })
+    });
+
+    if (!response.ok) {
+      console.error('Moderation API failed:', response.status, await response.text());
+      return false;
+    }
+
+    const result = await response.json();
+    return Boolean(result?.results?.some(item => item?.flagged || item?.categories?.sexual === true));
+  } catch (e) {
+    console.error('Automatic moderation failed:', e);
+    return false;
+  }
+}
+
+// Posts: detected adult/sexual content is removed and the author is suspended for 3 days.
+exports.moderateAdultPost = onDocumentCreated(
+  { document: 'posts/{postId}', secrets: [OPENAI_API_KEY] },
+  async event => {
+    const data = event.data?.data();
+    if (!data?.authorUid) return;
+    if (!(await containsAdultContent(data, OPENAI_API_KEY.value()))) return;
+
+    await event.data.ref.delete();
+    await suspendUser(data.authorUid, 3, 'adult_content_post');
+  }
+);
+
+// Groups: remove the message and suspend the sender for 3 days.
+// Channels: remove the channel permanently and suspend the sender for 5 days.
+exports.moderateAdultCommunityMessage = onDocumentCreated(
+  { document: 'communities/{communityId}/messages/{messageId}', secrets: [OPENAI_API_KEY] },
+  async event => {
+    const data = event.data?.data();
+    if (!data?.senderUid) return;
+    if (!(await containsAdultContent(data, OPENAI_API_KEY.value()))) return;
+
+    const communityRef = admin.firestore().collection('communities').doc(event.params.communityId);
+    const communitySnap = await communityRef.get();
+    const community = communitySnap.data() || {};
+
+    await event.data.ref.delete();
+
+    if (community.type === 'channel') {
+      await admin.firestore().recursiveDelete(communityRef);
+      await suspendUser(data.senderUid, 5, 'adult_content_channel');
+    } else {
+      await suspendUser(data.senderUid, 3, 'adult_content_group_message');
+    }
+  }
+);
 
 exports.restoreModerationSuspensions = onSchedule('every 15 minutes', async () => {
   const now = admin.firestore.Timestamp.now();
