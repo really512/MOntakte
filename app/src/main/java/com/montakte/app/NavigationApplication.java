@@ -1,9 +1,12 @@
 package com.montakte.app;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.Application;
+import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.graphics.Color;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -16,6 +19,9 @@ public class NavigationApplication extends Application {
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override public void onActivityCreated(Activity activity, android.os.Bundle state) {
                 if (!(activity instanceof MainActivity)) return;
+                if (Build.VERSION.SDK_INT >= 33 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    activity.getWindow().getDecorView().postDelayed(() -> activity.requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 910), 500);
+                }
                 activity.getWindow().getDecorView().postDelayed(() -> installTabs(activity), 250);
             }
             private void installTabs(Activity activity) {
