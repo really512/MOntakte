@@ -7,13 +7,13 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.*;
-import androidx.annotation.NonNull;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import java.util.regex.Pattern;
 
-/** Free Firebase email/password authentication entry point for ВОнтакте. */
+/** Email/password authentication entry point for ВОнтакте. */
 public class AuthActivity extends Activity {
     private FirebaseAuth auth;
     private LinearLayout root;
@@ -23,10 +23,7 @@ public class AuthActivity extends Activity {
         super.onCreate(state);
         auth = FirebaseAuth.getInstance();
         FirebaseUser user = auth.getCurrentUser();
-        if (user != null) {
-            openApp();
-            return;
-        }
+        if (user != null) { openApp(); return; }
         showAuth();
     }
 
@@ -55,6 +52,8 @@ public class AuthActivity extends Activity {
     private EditText input(String hint, int type) {
         EditText e = new EditText(this);
         e.setHint(hint);
+        e.setHintTextColor(Color.parseColor("#667085"));
+        e.setTextColor(Color.parseColor("#14213D"));
         e.setTextSize(16);
         e.setSingleLine(true);
         e.setInputType(type);
@@ -63,13 +62,16 @@ public class AuthActivity extends Activity {
         return e;
     }
 
-    private Button button(String label) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setTextSize(15);
-        b.setAllCaps(false);
-        b.setTextColor(Color.WHITE);
+    /** TextView-style button so the label is always explicitly rendered above the blue background. */
+    private TextView button(String label) {
+        TextView b = center(label, 16, Color.WHITE);
+        b.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        b.setGravity(Gravity.CENTER);
+        b.setClickable(true);
+        b.setFocusable(true);
+        b.setPadding(16, 0, 16, 0);
         b.setBackground(bg(accent, 28));
+        b.setMinHeight(52);
         return b;
     }
 
@@ -109,10 +111,10 @@ public class AuthActivity extends Activity {
         Space s4 = new Space(this);
         root.addView(s4, new LinearLayout.LayoutParams(1, 14));
 
-        Button login = button("Войти");
+        TextView login = button("Войти");
         root.addView(login, new LinearLayout.LayoutParams(-1, 52));
 
-        Button register = button("Создать аккаунт");
+        TextView register = button("Создать аккаунт");
         LinearLayout.LayoutParams rp = new LinearLayout.LayoutParams(-1, 52);
         rp.setMargins(0, 10, 0, 0);
         root.addView(register, rp);
@@ -138,26 +140,18 @@ public class AuthActivity extends Activity {
 
     private void signIn(String email, String password) {
         if (!validate(email, password)) return;
-        auth.signInWithEmailAndPassword(email, password)
-                .addOnCompleteListener(this, task -> {
-                    if (task.isSuccessful() && task.getResult().getUser() != null) {
-                        openApp();
-                    } else {
-                        toast("Не удалось войти: " + error(task.getException()));
-                    }
-                });
+        auth.signInWithEmailAndPassword(email, password).addOnCompleteListener(this, task -> {
+            if (task.isSuccessful() && task.getResult().getUser() != null) openApp();
+            else toast("Не удалось войти: " + error(task.getException()));
+        });
     }
 
     private void register(String email, String password) {
         if (!validate(email, password)) return;
-        auth.createUserWithEmailAndPassword(email, password)
-                .addOnCompleteListener(this, task -> {
-                    if (task.isSuccessful() && task.getResult().getUser() != null) {
-                        openApp();
-                    } else {
-                        toast("Не удалось создать аккаунт: " + error(task.getException()));
-                    }
-                });
+        auth.createUserWithEmailAndPassword(email, password).addOnCompleteListener(this, task -> {
+            if (task.isSuccessful() && task.getResult().getUser() != null) openApp();
+            else toast("Не удалось создать аккаунт: " + error(task.getException()));
+        });
     }
 
     private String error(Exception e) {
