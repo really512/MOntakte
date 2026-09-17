@@ -1,12 +1,12 @@
 package com.montakte.app;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
@@ -41,13 +41,25 @@ public class CommunityChatActivity extends Activity {
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(12,12,12,12);
         TextView title=text(("channel".equals(type)?"📢 ":"👥 ")+titleName,25);title.setTypeface(Typeface.DEFAULT,Typeface.BOLD);title.setGravity(Gravity.CENTER);root.addView(title);
         TextView status=text(isMember()?"Вы участник":"Вы не участник",14);status.setGravity(Gravity.CENTER);root.addView(status);
-        Button membership=button(isMember()?"Выйти":"Вступить");root.addView(membership);membership.setOnClickListener(v->toggleMembership(membership,status));
+        LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.CENTER);Button membership=button(isMember()?"Выйти":"Вступить");Button membersButton=button("👥 "+(members==null?0:members.size())+" участников");actions.addView(membership,new LinearLayout.LayoutParams(0,-2,1));actions.addView(membersButton,new LinearLayout.LayoutParams(0,-2,1));root.addView(actions);
+        membership.setOnClickListener(v->toggleMembership(membership,status,membersButton));
+        membersButton.setOnClickListener(v->showMembers());
         ScrollView scroll=new ScrollView(this);messages=new LinearLayout(this);messages.setOrientation(LinearLayout.VERTICAL);messages.setPadding(4,12,4,12);scroll.addView(messages);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         input=new EditText(this);input.setHint("Сообщение");input.setSingleLine(false);send=button("Отправить");LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.addView(input,new LinearLayout.LayoutParams(0,-2,1));bar.addView(send);root.addView(bar);
         if(!isMember()||("channel".equals(type)&&!isAdmin())){input.setEnabled(false);send.setEnabled(false);input.setHint("Вступите в сообщество, чтобы писать");if("channel".equals(type)&&isMember())input.setHint("Писать могут только админы");}
         Button back=button("← Назад");root.addView(back);back.setOnClickListener(v->finish());send.setOnClickListener(v->sendMessage());setContentView(root);loadMessages();
     }
-    private void toggleMembership(Button b,TextView status){boolean join=!isMember();if("channel".equals(type)&&!join&&isAdmin()){Toast.makeText(this,"Владелец/админ не может выйти из канала",Toast.LENGTH_SHORT).show();return;}db.collection("communities").document(communityId).update("members",join?FieldValue.arrayUnion(user.getUid()):FieldValue.arrayRemove(user.getUid())).addOnSuccessListener(v->{if(join){if(members==null)members=new ArrayList<>();if(!members.contains(user.getUid()))members.add(user.getUid());}else if(members!=null)members.remove(user.getUid());b.setText(join?"Выйти":"Вступить");status.setText(join?"Вы участник":"Вы не участник");input.setEnabled(join&&(!"channel".equals(type)||isAdmin()));send.setEnabled(join&&(!"channel".equals(type)||isAdmin()));}).addOnFailureListener(e->Toast.makeText(this,"Не удалось изменить участие",Toast.LENGTH_SHORT).show());}
+    private void toggleMembership(Button b,TextView status,Button membersButton){boolean join=!isMember();if("channel".equals(type)&&!join&&isAdmin()){Toast.makeText(this,"Владелец/админ не может выйти из канала",Toast.LENGTH_SHORT).show();return;}db.collection("communities").document(communityId).update("members",join?FieldValue.arrayUnion(user.getUid()):FieldValue.arrayRemove(user.getUid())).addOnSuccessListener(v->{if(join){if(members==null)members=new ArrayList<>();if(!members.contains(user.getUid()))members.add(user.getUid());}else if(members!=null)members.remove(user.getUid());b.setText(join?"Выйти":"Вступить");status.setText(join?"Вы участник":"Вы не участник");membersButton.setText("👥 "+(members==null?0:members.size())+" участников");input.setEnabled(join&&(!"channel".equals(type)||isAdmin()));send.setEnabled(join&&(!"channel".equals(type)||isAdmin()));}).addOnFailureListener(e->Toast.makeText(this,"Не удалось изменить участие",Toast.LENGTH_SHORT).show());}
+    private void showMembers(){
+        if(members==null||members.isEmpty()){new AlertDialog.Builder(this).setTitle("Участники").setMessage("Пока нет участников.").setPositiveButton("Закрыть",null).show();return;}
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(8,4,8,4);ScrollView scroll=new ScrollView(this);scroll.addView(box);
+        for(String uid:members){
+            TextView row=text("Загрузка...",16);row.setPadding(12,14,12,14);box.addView(row);
+            if(uid.equals(ownerUid)) row.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+            db.collection("users").document(uid).get().addOnSuccessListener(p->{String n=p.getString("displayName"),phone=p.getString("phone");if(n==null||n.trim().isEmpty())n=phone==null?"Пользователь":phone;String role=uid.equals(ownerUid)?" 👑 Создатель":(admins!=null&&admins.contains(uid)?" 🛡 Админ":"");row.setText("👤 "+n+role);}).addOnFailureListener(e->row.setText("👤 Пользователь"));
+        }
+        new AlertDialog.Builder(this).setTitle("Участники · "+members.size()).setView(scroll).setPositiveButton("Закрыть",null).show();
+    }
     private void loadMessages(){db.collection("communities").document(communityId).collection("messages").orderBy("createdAt",Query.Direction.ASCENDING).limitToLast(100).addSnapshotListener((snap,e)->{if(e!=null||snap==null)return;messages.removeAllViews();for(DocumentSnapshot d:snap.getDocuments()){String sender=d.getString("senderUid"),body=d.getString("text");renderMessage(sender,body);}});}
     private void renderMessage(String uid,String body){
         final boolean mine=user.getUid().equals(uid); LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(mine?Gravity.RIGHT:Gravity.LEFT);row.setPadding(4,5,4,5);
