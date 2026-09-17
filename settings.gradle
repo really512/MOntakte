@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Kontakte"
+rootProject.name = "VKontakte"
 include(":app")
