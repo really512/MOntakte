@@ -6,32 +6,22 @@
     <uses-permission android:name="android.permission.CAMERA" />
 
     <application
+        android:name=".NavigationApplication"
         android:allowBackup="true"
         android:icon="@drawable/kontakte_icon"
         android:label="ВОнтакте"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
-        <activity
-            android:name=".CallActivity"
-            android:exported="false" />
-        <activity
-            android:name=".GroupChannelActivity"
-            android:exported="false" />
-        <activity
-            android:name=".CommunitiesActivity"
-            android:exported="false" />
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
+        <activity android:name=".CallActivity" android:exported="false" />
+        <activity android:name=".GroupChannelActivity" android:exported="false" />
+        <activity android:name=".CommunitiesActivity" android:exported="false" />
+        <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <service
-            android:name=".KontakteMessagingService"
-            android:exported="false">
+        <service android:name=".KontakteMessagingService" android:exported="false">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
