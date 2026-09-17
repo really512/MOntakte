@@ -6,20 +6,49 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.InputType;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+
+import com.google.firebase.FirebaseException;
+import com.google.firebase.auth.AuthResult;
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.PhoneAuthCredential;
+import com.google.firebase.auth.PhoneAuthOptions;
+import com.google.firebase.auth.PhoneAuthProvider;
+import com.google.android.gms.tasks.OnCompleteListener;
+import com.google.android.gms.tasks.Task;
+
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends Activity {
     private LinearLayout root;
     private EditText phoneInput;
+    private FirebaseAuth auth;
+    private String verificationId;
+    private PhoneAuthProvider.ForceResendingToken resendToken;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        showPhoneScreen();
+
+        try {
+            auth = FirebaseAuth.getInstance();
+            FirebaseUser currentUser = auth.getCurrentUser();
+            if (currentUser != null) {
+                showLoggedInScreen(currentUser);
+            } else {
+                showPhoneScreen();
+            }
+        } catch (IllegalStateException e) {
+            showFirebaseSetupScreen();
+        }
     }
 
     private TextView text(String value, float size) {
@@ -53,8 +82,7 @@ public class MainActivity extends Activity {
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(title);
 
-        TextView subtitle = text("Вход или регистрация", 20);
-        root.addView(subtitle);
+        root.addView(text("Вход или регистрация", 20));
 
         phoneInput = new EditText(this);
         phoneInput.setHint("Номер телефона, например +7...");
@@ -67,12 +95,45 @@ public class MainActivity extends Activity {
 
         continueButton.setOnClickListener(v -> {
             String phone = phoneInput.getText().toString().trim();
-            if (phone.length() >= 7) {
-                showCodeScreen(phone);
-            } else {
+            if (phone.length() < 7) {
                 phoneInput.setError("Введите номер телефона");
+                return;
             }
+            sendCode(phone);
         });
+    }
+
+    private void sendCode(String phone) {
+        Toast.makeText(this, "Отправляем код...", Toast.LENGTH_SHORT).show();
+
+        PhoneAuthOptions options = PhoneAuthOptions.newBuilder(auth)
+                .setPhoneNumber(phone)
+                .setTimeout(60L, TimeUnit.SECONDS)
+                .setActivity(this)
+                .setCallbacks(new PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                    @Override
+                    public void onVerificationCompleted(@NonNull PhoneAuthCredential credential) {
+                        signInWithPhoneAuthCredential(credential);
+                    }
+
+                    @Override
+                    public void onVerificationFailed(@NonNull FirebaseException e) {
+                        Toast.makeText(MainActivity.this,
+                                "Не удалось отправить код: " + e.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                    }
+
+                    @Override
+                    public void onCodeSent(@NonNull String id,
+                                           @NonNull PhoneAuthProvider.ForceResendingToken token) {
+                        verificationId = id;
+                        resendToken = token;
+                        showCodeScreen(phone);
+                    }
+                })
+                .build();
+
+        PhoneAuthProvider.verifyPhoneNumber(options);
     }
 
     private void showCodeScreen(String phone) {
@@ -82,7 +143,7 @@ public class MainActivity extends Activity {
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         root.addView(title);
 
-        root.addView(text("Код подтверждения будет отправлен на", 17));
+        root.addView(text("Код подтверждения отправлен на", 17));
         root.addView(text(phone, 18));
 
         EditText codeInput = new EditText(this);
@@ -95,13 +156,108 @@ public class MainActivity extends Activity {
         Button verifyButton = button("Подтвердить");
         root.addView(verifyButton);
 
-        TextView note = text("Реальная отправка SMS подключается через сервер авторизации.", 14);
-        root.addView(note);
+        Button resendButton = button("Отправить код ещё раз");
+        root.addView(resendButton);
 
         verifyButton.setOnClickListener(v -> {
-            if (codeInput.getText().length() < 4) {
+            String code = codeInput.getText().toString().trim();
+            if (code.length() < 4) {
                 codeInput.setError("Введите код из SMS");
+                return;
             }
+            if (verificationId == null) {
+                codeInput.setError("Сначала запросите код ещё раз");
+                return;
+            }
+
+            PhoneAuthCredential credential = PhoneAuthProvider.getCredential(verificationId, code);
+            signInWithPhoneAuthCredential(credential);
         });
+
+        resendButton.setOnClickListener(v -> {
+            if (resendToken == null) {
+                sendCode(phone);
+                return;
+            }
+
+            PhoneAuthOptions options = PhoneAuthOptions.newBuilder(auth)
+                    .setPhoneNumber(phone)
+                    .setTimeout(60L, TimeUnit.SECONDS)
+                    .setActivity(this)
+                    .setForceResendingToken(resendToken)
+                    .setCallbacks(new PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                        @Override
+                        public void onVerificationCompleted(@NonNull PhoneAuthCredential credential) {
+                            signInWithPhoneAuthCredential(credential);
+                        }
+
+                        @Override
+                        public void onVerificationFailed(@NonNull FirebaseException e) {
+                            Toast.makeText(MainActivity.this,
+                                    "Не удалось отправить код: " + e.getMessage(),
+                                    Toast.LENGTH_LONG).show();
+                        }
+
+                        @Override
+                        public void onCodeSent(@NonNull String id,
+                                               @NonNull PhoneAuthProvider.ForceResendingToken token) {
+                            verificationId = id;
+                            resendToken = token;
+                            Toast.makeText(MainActivity.this,
+                                    "Новый код отправлен",
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    })
+                    .build();
+
+            PhoneAuthProvider.verifyPhoneNumber(options);
+        });
+    }
+
+    private void signInWithPhoneAuthCredential(PhoneAuthCredential credential) {
+        auth.signInWithCredential(credential)
+                .addOnCompleteListener(this, new OnCompleteListener<AuthResult>() {
+                    @Override
+                    public void onComplete(@NonNull Task<AuthResult> task) {
+                        if (task.isSuccessful()) {
+                            FirebaseUser user = task.getResult().getUser();
+                            if (user != null) {
+                                showLoggedInScreen(user);
+                            }
+                        } else {
+                            if (task.getException() instanceof FirebaseAuthInvalidCredentialsException) {
+                                Toast.makeText(MainActivity.this,
+                                        "Неверный код подтверждения",
+                                        Toast.LENGTH_LONG).show();
+                            } else {
+                                Toast.makeText(MainActivity.this,
+                                        "Ошибка входа: " + task.getException(),
+                                        Toast.LENGTH_LONG).show();
+                            }
+                        }
+                    }
+                });
+    }
+
+    private void showLoggedInScreen(FirebaseUser user) {
+        setupRoot();
+
+        TextView title = text("Добро пожаловать в Контакте!", 28);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        root.addView(title);
+
+        String phone = user.getPhoneNumber();
+        root.addView(text(phone == null ? "Вход выполнен" : phone, 18));
+    }
+
+    private void showFirebaseSetupScreen() {
+        setupRoot();
+
+        TextView title = text("Контакте", 34);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        root.addView(title);
+
+        root.addView(text("SMS-авторизация почти готова.", 20));
+        root.addView(text("Нужно подключить Firebase-проект и файл google-services.json.", 16));
     }
 }
