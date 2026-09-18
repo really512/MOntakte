@@ -25,8 +25,6 @@ public class MainActivity extends Activity {
     private FirebaseAuth auth;
     private FirebaseFirestore db;
     private FirebaseStorage storage;
-    private String verificationId;
-    private PhoneAuthProvider.ForceResendingToken resendToken;
     private static final int PICK_MEDIA = 901;
     private Uri selectedMedia;
     private final String accent = "#2684FF";
@@ -41,8 +39,8 @@ public class MainActivity extends Activity {
             db = FirebaseFirestore.getInstance();
             storage = FirebaseStorage.getInstance();
             FirebaseUser u = auth.getCurrentUser();
-            if (u == null) phoneScreen(); else checkProfile(u);
-        } catch (Exception e) { phoneScreen(); }
+            if (u == null) openAuth(); else checkProfile(u);
+        } catch (Exception e) { openAuth(); }
     }
 
     private GradientDrawable bg(String c, float r) {
@@ -139,66 +137,9 @@ public class MainActivity extends Activity {
         b.setOnClickListener(v -> feed(u));
     }
 
-    private void phoneScreen() {
-        authBase(); logo();
-        Space a = new Space(this); root.addView(a, new LinearLayout.LayoutParams(1, 16));
-        TextView t = center("Добро пожаловать в ВОнтакте", 24, ink);
-        t.setTypeface(Typeface.DEFAULT, Typeface.BOLD); root.addView(t);
-        root.addView(center("Вход и регистрация по номеру телефона", 15, muted));
-        Space s = new Space(this); root.addView(s, new LinearLayout.LayoutParams(1, 22));
-        EditText phone = input("Номер телефона, например +7 900 000-00-00");
-        phone.setInputType(InputType.TYPE_CLASS_PHONE);
-        root.addView(phone, new LinearLayout.LayoutParams(-1, 54));
-        Space s2 = new Space(this); root.addView(s2, new LinearLayout.LayoutParams(1, 14));
-        Button next = button("Продолжить");
-        root.addView(next, new LinearLayout.LayoutParams(-1, 52));
-        root.addView(center("Мы отправим SMS-код для подтверждения номера.", 13, Color.parseColor("#8A94A6")));
-        next.setOnClickListener(v -> {
-            String p = phone.getText().toString().trim();
-            if (p.length() < 7) { phone.setError("Введите номер телефона"); return; }
-            sendCode(p);
-        });
-    }
-
-    private void sendCode(String p) {
-        toast("Отправляем SMS-код…");
-        PhoneAuthOptions o = PhoneAuthOptions.newBuilder(auth)
-            .setPhoneNumber(p).setTimeout(60L, TimeUnit.SECONDS).setActivity(this)
-            .setCallbacks(new PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-                public void onVerificationCompleted(@NonNull PhoneAuthCredential c) { signIn(c); }
-                public void onVerificationFailed(@NonNull FirebaseException e) { toast("Не удалось отправить код: " + e.getMessage()); }
-                public void onCodeSent(@NonNull String id, @NonNull PhoneAuthProvider.ForceResendingToken t) {
-                    verificationId = id; resendToken = t; codeScreen(p);
-                }
-            }).build();
-        PhoneAuthProvider.verifyPhoneNumber(o);
-    }
-
-    private void codeScreen(String p) {
-        authBase(); logo();
-        Space s = new Space(this); root.addView(s, new LinearLayout.LayoutParams(1, 16));
-        root.addView(center("Подтверждение номера", 24, ink));
-        root.addView(center("Код отправлен на\n" + p, 15, muted));
-        Space s2 = new Space(this); root.addView(s2, new LinearLayout.LayoutParams(1, 20));
-        EditText c = input("Код из SMS"); c.setInputType(InputType.TYPE_CLASS_NUMBER);
-        root.addView(c, new LinearLayout.LayoutParams(-1, 54));
-        Space s3 = new Space(this); root.addView(s3, new LinearLayout.LayoutParams(1, 14));
-        Button ok = button("Войти / зарегистрироваться");
-        root.addView(ok, new LinearLayout.LayoutParams(-1, 52));
-        Button again = softButton("Отправить код ещё раз"); root.addView(again);
-        ok.setOnClickListener(v -> {
-            if (c.length() < 4) { c.setError("Введите код"); return; }
-            if (verificationId == null) { toast("Сначала запросите код"); return; }
-            signIn(PhoneAuthProvider.getCredential(verificationId, c.getText().toString().trim()));
-        });
-        again.setOnClickListener(v -> sendCode(p));
-    }
-
-    private void signIn(PhoneAuthCredential c) {
-        auth.signInWithCredential(c).addOnCompleteListener(this, t -> {
-            if (t.isSuccessful() && t.getResult().getUser() != null) checkProfile(t.getResult().getUser());
-            else toast("Ошибка входа: " + (t.getException() == null ? "неизвестная ошибка" : t.getException().getMessage()));
-        });
+    private void openAuth() {
+        startActivity(new Intent(this, AuthActivity.class));
+        finish();
     }
 
     private void checkProfile(FirebaseUser u) {
@@ -223,7 +164,7 @@ public class MainActivity extends Activity {
             String n = name.getText().toString().trim();
             if (n.length() < 2) { name.setError("Введите имя"); return; }
             Map<String,Object> m = new HashMap<>();
-            m.put("uid", u.getUid()); m.put("phone", u.getPhoneNumber());
+            m.put("uid", u.getUid()); m.put("email", u.getEmail());
             m.put("displayName", n); m.put("avatar", avatar.getText().toString().trim());
             m.put("createdAt", FieldValue.serverTimestamp()); m.put("updatedAt", FieldValue.serverTimestamp());
             save.setEnabled(false);
@@ -398,11 +339,11 @@ public class MainActivity extends Activity {
         Space sp=new Space(this);row.addView(sp,new LinearLayout.LayoutParams(18,1));
         LinearLayout info=new LinearLayout(this);info.setOrientation(LinearLayout.VERTICAL);
         TextView name=center("Загрузка…",22,ink);name.setTypeface(Typeface.DEFAULT,Typeface.BOLD);info.addView(name);
-        TextView phone=center("",14,muted);info.addView(phone);row.addView(info,new LinearLayout.LayoutParams(0,80,1));c.addView(row);root.addView(c);
-        db.collection("users").document(u.getUid()).get().addOnSuccessListener(d->{name.setText(d.getString("displayName")==null?"Пользователь":d.getString("displayName"));phone.setText(d.getString("phone")==null?"":d.getString("phone"));});
+        TextView email=center("",14,muted);info.addView(email);row.addView(info,new LinearLayout.LayoutParams(0,80,1));c.addView(row);root.addView(c);
+        db.collection("users").document(u.getUid()).get().addOnSuccessListener(d->{name.setText(d.getString("displayName")==null?"Пользователь":d.getString("displayName"));email.setText(d.getString("email")==null?"":d.getString("email"));});
         Button out=button("Выйти");root.addView(out,new LinearLayout.LayoutParams(-1,52));
         Button back=softButton("← В ленту");root.addView(back);back.setOnClickListener(v->feed(u));
-        out.setOnClickListener(v->{auth.signOut();phoneScreen();});
+        out.setOnClickListener(v->{auth.signOut();openAuth();});
     }
 
     private void friends(FirebaseUser u) {
@@ -444,7 +385,7 @@ public class MainActivity extends Activity {
         LinearLayout account=card();account.addView(text("Аккаунт",14,muted));account.addView(text("👤  Личные данные                                      ›",16,ink));account.addView(text("☎  Номер телефона",16,ink));account.addView(text("✉  Почта",16,ink));root.addView(account);
         LinearLayout privacy=card();privacy.addView(text("Приватность",14,muted));privacy.addView(text("Кто может видеть мою страницу                         ›",15,ink));privacy.addView(text("Кто может писать мне                                    ›",15,ink));privacy.addView(text("Кто может приглашать в друзья                         ›",15,ink));privacy.addView(text("Блокировка пользователей                              ›",15,ink));root.addView(privacy);
         LinearLayout appearance=card();appearance.addView(text("Уведомления и внешний вид",14,muted));appearance.addView(text("🔔 Push-уведомления                              ВКЛ",15,ink));appearance.addView(text("🔊 Звук уведомлений                                  ВКЛ",15,ink));appearance.addView(text("◐ Тёмная тема                                      ВЫКЛ",15,ink));root.addView(appearance);
-        Button out=button("Выйти из аккаунта");out.setTextColor(Color.parseColor("#E5484D"));out.setBackground(bg("#FFFFFF",22));root.addView(out,new LinearLayout.LayoutParams(-1,52));out.setOnClickListener(v->{auth.signOut();phoneScreen();});
+        Button out=button("Выйти из аккаунта");out.setTextColor(Color.parseColor("#E5484D"));out.setBackground(bg("#FFFFFF",22));root.addView(out,new LinearLayout.LayoutParams(-1,52));out.setOnClickListener(v->{auth.signOut();openAuth();});
         Button back=softButton("← В ленту");root.addView(back);back.setOnClickListener(v->feed(u));
     }
 
